@@ -1,5 +1,4 @@
 import pandas as pd
-import itertools
 import streamlit as st
 import matplotlib.pyplot as plt
 
@@ -35,50 +34,29 @@ if uploaded_file:
     st.subheader("Preview of Uploaded Data")
     st.dataframe(df.head())
 
-    all_numbers = df[number_cols].values.flatten()
-    all_numbers_series = pd.Series(all_numbers)
-
-    # Frequency of numbers
-    freq = all_numbers_series.value_counts().sort_index()
-    st.subheader("Number Frequency")
-    st.bar_chart(freq)
-
-    hot = freq.head(5)
-    cold = freq.tail(5)
-
-    st.write("🔥 Hot Numbers (most frequent):")
-    st.write(hot)
-    st.write("❄️ Cold Numbers (least frequent):")
-    st.write(cold)
-
-    # Pair frequency
-    st.subheader("Most Common Pairs")
-    pairs = []
-    for row in df[number_cols].values:
-        row_pairs = itertools.combinations(sorted(row), 2)
-        pairs.extend(row_pairs)
-
-    pair_series = pd.Series(pairs).value_counts().head(10)
-    st.write(pair_series)
-
-    # --- Odd/Even breakdown per row (counts only) ---
-    st.subheader("Odd/Even Breakdown per Row")
-
-    def row_odd_even_count(row):
-        odd_count = (row % 2 != 0).sum()
-        even_count = (row % 2 == 0).sum()
-        return f"{odd_count}/{even_count}"
-
-    df["Odd/Even"] = df[number_cols].apply(row_odd_even_count, axis=1)
-    st.dataframe(df[["Odd/Even"] + number_cols])
-
-    # --- Sum Range Analysis ---
-    st.subheader("Sum Range Analysis")
+    # ---------------------------
+    # Statistical Analysis / Sum Range
+    # ---------------------------
+    st.subheader("Sum Range Analysis & Statistical Summary")
 
     df["Sum"] = df[number_cols].sum(axis=1)
 
-    st.write("📊 Summary Statistics for Sums:")
-    st.write(df["Sum"].describe())
+    # Summary statistics
+    summary_stats = {
+        'Mean': df['Sum'].mean(),
+        'Median': df['Sum'].median(),
+        'Mode': df['Sum'].mode()[0],
+        'Min': df['Sum'].min(),
+        'Max': df['Sum'].max(),
+        'Range': df['Sum'].max() - df['Sum'].min(),
+        'Variance': df['Sum'].var(),
+        'Standard Deviation': df['Sum'].std(),
+        'Q1': df['Sum'].quantile(0.25),
+        'Q2 (Median)': df['Sum'].median(),
+        'Q3': df['Sum'].quantile(0.75)
+    }
+
+    st.write(summary_stats)
 
     # Histogram of sum values
     fig, ax = plt.subplots()
@@ -88,6 +66,21 @@ if uploaded_file:
     ax.set_ylabel("Frequency")
     st.pyplot(fig)
 
-    # Highlight common range (where most sums fall)
+    # Highlight most common range (IQR)
     most_common_range = (df["Sum"].quantile(0.25), df["Sum"].quantile(0.75))
     st.write(f"✅ Most common sum range (IQR): **{int(most_common_range[0])} – {int(most_common_range[1])}**")
+
+    # ---------------------------
+    # Odd/Even breakdown per row
+    # ---------------------------
+    st.subheader("Odd/Even Breakdown per Row")
+
+    def row_odd_even_count(row):
+        odd_count = (row % 2 != 0).sum()
+        even_count = (row % 2 == 0).sum()
+        return f"{odd_count}/{even_count}"
+
+    df["Odd/Even"] = df[number_cols].apply(row_odd_even_count, axis=1)
+
+    # Show numbers with Odd/Even last
+    st.dataframe(df[number_cols + ["Odd/Even"]])

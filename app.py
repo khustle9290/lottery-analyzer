@@ -50,20 +50,23 @@ if uploaded_file or use_default:
             st.error("No valid number columns found.")
             st.stop()
 
-        # Split numbers in memory (like your working script)
-        nums_df = df[num_col].astype(str).str.split('--', expand=True)
-        nums_df = nums_df.applymap(lambda x: str(x).strip())
+        # Split numbers safely using regex
+        nums_df = df[num_col].astype(str).str.split(r'\s*[-–—,:;]\s*', expand=True)
+        nums_df = nums_df.applymap(lambda x: str(x).strip() if x is not None else x)
+
+        # Convert to numeric safely (non-numeric strings become NaN)
+        for col in nums_df.columns:
+            nums_df[col] = pd.to_numeric(nums_df[col], errors='coerce')
 
         # Rename columns
         nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
 
-        # Add Draw Date back in
+        # Merge Draw Date if exists
         if "Draw Date" in df.columns:
-            cleaned_df = pd.concat([df["Draw Date"], nums_df], axis=1)
+            df = pd.concat([df["Draw Date"], nums_df], axis=1)
         else:
-            cleaned_df = nums_df
+            df = nums_df
 
-        df = cleaned_df
         number_cols = nums_df.columns.tolist()
 
     # --- Preview Data ---
@@ -74,7 +77,7 @@ if uploaded_file or use_default:
     # Sum Analysis
     # ---------------------------
     st.subheader("Sum Range Analysis & Statistical Summary")
-    df["Sum"] = df[number_cols].astype(int).sum(axis=1)
+    df["Sum"] = df[number_cols].sum(axis=1, skipna=True)
 
     summary_stats = {
         'Mean': df['Sum'].mean(),
@@ -112,5 +115,5 @@ if uploaded_file or use_default:
         even = (row % 2 == 0).sum()
         return f"{odd}/{even}"
 
-    df["Odd/Even"] = df[number_cols].astype(int).apply(row_odd_even, axis=1)
+    df["Odd/Even"] = df[number_cols].apply(row_odd_even, axis=1)
     st.dataframe(df[number_cols + ["Odd/Even"]])

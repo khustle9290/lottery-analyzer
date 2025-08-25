@@ -22,14 +22,10 @@ Only the **first 100 rows** will be analyzed.
 """
 )
 
-# --- File Upload ---
+# --- File Upload or default ---
 uploaded_file = st.file_uploader("Upload your lottery results (Excel/CSV)", type=["csv", "xlsx"])
-
-# --- Optional: Default cleaned file ---
-default_file_path = r"C:\Users\vin\Downloads\SMC\updatedSMC.xlsx"
-use_default = False
-if os.path.exists(default_file_path):
-    use_default = st.checkbox("Use default cleaned file (updatedSMC.xlsx)", value=False)
+default_file_path = r"C:\Users\vin\Downloads\ShowMeCash.xlsx"
+use_default = os.path.exists(default_file_path) and st.checkbox("Use default file (ShowMeCash.xlsx)", value=False)
 
 if uploaded_file or use_default:
     # Load only first 100 rows
@@ -40,11 +36,12 @@ if uploaded_file or use_default:
     else:
         df = pd.read_excel(uploaded_file, nrows=100)
 
-    # Detect number columns
+    # Automatically detect number columns
     number_cols = [col for col in df.columns if "Num" in col]
 
-    # --- Parse messy number column if needed ---
+    # --- If no Num1–Num5, clean in memory ---
     if not number_cols:
+        # Determine column to parse
         if "Numbers In Order" in df.columns:
             num_col = "Numbers In Order"
         elif "Numbers As Drawn" in df.columns:
@@ -53,20 +50,20 @@ if uploaded_file or use_default:
             st.error("No valid number columns found.")
             st.stop()
 
-        # Safe parse function
-        def safe_parse_numbers(cell):
-            nums = re.split(r'\s*[-–—,:;]\s*|\s{2,}', str(cell).strip())
-            return [int(n) for n in nums if n.isdigit()]
+        # Split numbers in memory (like your working script)
+        nums_df = df[num_col].astype(str).str.split('--', expand=True)
+        nums_df = nums_df.applymap(lambda x: str(x).strip())
 
-        nums_df = df[num_col].apply(safe_parse_numbers)
-        nums_df = pd.DataFrame(nums_df.tolist())
-
-        # Fill missing numbers with NaN if some rows have fewer numbers
-        max_cols = nums_df.shape[1]
-        nums_df = nums_df.apply(lambda row: [row[i] if i < len(row) else None for i in range(max_cols)], axis=1, result_type='expand')
-
+        # Rename columns
         nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
-        df = pd.concat([df, nums_df], axis=1)
+
+        # Add Draw Date back in
+        if "Draw Date" in df.columns:
+            cleaned_df = pd.concat([df["Draw Date"], nums_df], axis=1)
+        else:
+            cleaned_df = nums_df
+
+        df = cleaned_df
         number_cols = nums_df.columns.tolist()
 
     # --- Preview Data ---
@@ -77,7 +74,7 @@ if uploaded_file or use_default:
     # Sum Analysis
     # ---------------------------
     st.subheader("Sum Range Analysis & Statistical Summary")
-    df["Sum"] = df[number_cols].sum(axis=1)
+    df["Sum"] = df[number_cols].astype(int).sum(axis=1)
 
     summary_stats = {
         'Mean': df['Sum'].mean(),
@@ -115,5 +112,5 @@ if uploaded_file or use_default:
         even = (row % 2 == 0).sum()
         return f"{odd}/{even}"
 
-    df["Odd/Even"] = df[number_cols].apply(row_odd_even, axis=1)
+    df["Odd/Even"] = df[number_cols].astype(int).apply(row_odd_even, axis=1)
     st.dataframe(df[number_cols + ["Odd/Even"]])

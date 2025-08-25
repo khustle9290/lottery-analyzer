@@ -33,7 +33,7 @@ if uploaded_file:
     # Automatically detect number columns
     number_cols = [col for col in df.columns if "Num" in col]
 
-    # If no Num1–Num5 columns exist, parse single column
+    # --- If no Num1–Num5 columns exist, parse single column ---
     if not number_cols:
         if "Numbers In Order" in df.columns:
             num_col = "Numbers In Order"
@@ -48,18 +48,26 @@ if uploaded_file:
             lambda x: re.split(r"\s*[-–—,:;]\s*|\s{2,}", x.strip())
         )
 
-        # Convert to DataFrame and ints
+        # Convert list of numbers into DataFrame
         nums_df = pd.DataFrame(nums_df.tolist())
-        nums_df = nums_df.apply(lambda col: col.str.strip().astype(int))
 
-        # Sort ascending
-        nums_df = nums_df.apply(lambda row: sorted(row), axis=1, result_type='expand')
+        # Clean spaces & filter only digits before converting to int
+        nums_df = nums_df.applymap(lambda val: int(val.strip()) if isinstance(val, str) and val.strip().isdigit() else None)
+
+        # Drop any all-NaN rows (just in case)
+        nums_df = nums_df.dropna(how="all")
+
+        # Sort each row ascending
+        nums_df = nums_df.apply(lambda row: sorted([n for n in row if pd.notna(n)]), axis=1, result_type="expand")
+
+        # Rename columns
         nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
 
         # Merge with original df
         df = pd.concat([df, nums_df], axis=1)
         number_cols = nums_df.columns.tolist()
 
+    # --- Preview Uploaded Data ---
     st.subheader("Preview of Uploaded Data")
     st.dataframe(df.head())
 
@@ -73,7 +81,7 @@ if uploaded_file:
     summary_stats = {
         'Mean': df['Sum'].mean(),
         'Median': df['Sum'].median(),
-        'Mode': df['Sum'].mode()[0],
+        'Mode': df['Sum'].mode()[0] if not df['Sum'].mode().empty else None,
         'Min': df['Sum'].min(),
         'Max': df['Sum'].max(),
         'Range': df['Sum'].max() - df['Sum'].min(),

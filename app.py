@@ -10,22 +10,25 @@ st.title("🎲 Missouri Show Me Cash Lottery Analyzer")
 st.sidebar.header("Support this App")
 st.sidebar.markdown("[💰 Donate via PayPal](https://paypal.me/vinwills)")
 
-# --- User Instructions ---
+# --- Instructions ---
 st.markdown(
     """
 **⚠️ Important:**  
-Please make sure your uploaded file either has column headings as follows:  
-`Num1, Num2, Num3, Num4, Num5`  
-OR contains a column called `Numbers In Order` or `Numbers As Drawn`.  
-The app will handle both formats automatically.  
-Only the **first 100 rows** will be analyzed.
+The app supports both formats:  
+1. Columns `Num1, Num2, ..., Num5`  
+2. Column `Numbers In Order` (parsed automatically)  
+Only the **first 100 rows** will be analyzed.  
+Multiple separators like `-`, `–`, `—`, `,`, `:`, `;` are handled automatically.
 """
 )
 
 # --- File Upload or default ---
 uploaded_file = st.file_uploader("Upload your lottery results (Excel/CSV)", type=["csv", "xlsx"])
+
 default_file_path = r"C:\Users\vin\Downloads\ShowMeCash.xlsx"
-use_default = os.path.exists(default_file_path) and st.checkbox("Use default file (ShowMeCash.xlsx)", value=False)
+use_default = False
+if os.path.exists(default_file_path):
+    use_default = st.checkbox("Use default file (ShowMeCash.xlsx)", value=False)
 
 if uploaded_file or use_default:
     # Load only first 100 rows
@@ -36,38 +39,29 @@ if uploaded_file or use_default:
     else:
         df = pd.read_excel(uploaded_file, nrows=100)
 
-    # Automatically detect number columns
-    number_cols = [col for col in df.columns if "Num" in col]
+    # --- Detect number columns (Num1–Num5) ---
+    number_cols = [col for col in df.columns if re.match(r"Num\d+", col)]
 
-    # --- If no Num1–Num5, clean in memory ---
-    if not number_cols:
-        # Determine column to parse
-        if "Numbers In Order" in df.columns:
-            num_col = "Numbers In Order"
-        elif "Numbers As Drawn" in df.columns:
-            num_col = "Numbers As Drawn"
-        else:
-            st.error("No valid number columns found.")
-            st.stop()
+    if number_cols:
+        # Already in Num1–Num5 format
+        nums_df = df[number_cols].apply(pd.to_numeric, errors='coerce')
+    elif "Numbers In Order" in df.columns:
+        # Parse Numbers In Order safely
+        nums_df = df["Numbers In Order"].astype(str).str.split(r'\s*[-–—,:;]\s*', expand=True)
+        nums_df = nums_df.applymap(lambda x: pd.to_numeric(str(x).strip(), errors='coerce'))
+    else:
+        st.error("No valid number columns found (Num1–Num5 or Numbers In Order).")
+        st.stop()
 
-        # Split numbers safely using regex
-        nums_df = df[num_col].astype(str).str.split(r'\s*[-–—,:;]\s*', expand=True)
-        nums_df = nums_df.applymap(lambda x: str(x).strip() if x is not None else x)
+    # Rename columns dynamically
+    nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
+    number_cols = nums_df.columns.tolist()
 
-        # Convert to numeric safely (non-numeric strings become NaN)
-        for col in nums_df.columns:
-            nums_df[col] = pd.to_numeric(nums_df[col], errors='coerce')
-
-        # Rename columns
-        nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
-
-        # Merge Draw Date if exists
-        if "Draw Date" in df.columns:
-            df = pd.concat([df["Draw Date"], nums_df], axis=1)
-        else:
-            df = nums_df
-
-        number_cols = nums_df.columns.tolist()
+    # Merge Draw Date if exists
+    if "Draw Date" in df.columns:
+        df = pd.concat([df["Draw Date"], nums_df], axis=1)
+    else:
+        df = nums_df
 
     # --- Preview Data ---
     st.subheader("Preview of First 100 Rows")
@@ -102,7 +96,7 @@ if uploaded_file or use_default:
     ax.set_ylabel("Frequency")
     st.pyplot(fig)
 
-    # Highlight most common range
+    # Highlight most common range (IQR)
     iqr_range = (df["Sum"].quantile(0.25), df["Sum"].quantile(0.75))
     st.write(f"✅ Most common sum range (IQR): **{int(iqr_range[0])} – {int(iqr_range[1])}**")
 

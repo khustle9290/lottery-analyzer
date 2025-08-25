@@ -17,32 +17,33 @@ st.markdown(
 Please make sure your uploaded file either has column headings as follows:  
 `Num1, Num2, Num3, Num4, Num5`  
 OR contains a column called `Numbers In Order` or `Numbers As Drawn`.  
-The app will handle both formats automatically.
+The app will handle both formats automatically.  
+Only the **first 100 rows** will be analyzed.
 """
 )
 
 # --- File Upload ---
 uploaded_file = st.file_uploader("Upload your lottery results (Excel/CSV)", type=["csv", "xlsx"])
 
-# --- Optional: Automatically use cleaned default file ---
+# --- Optional: Default cleaned file ---
 default_file_path = r"C:\Users\vin\Downloads\SMC\updatedSMC.xlsx"
 use_default = False
 if os.path.exists(default_file_path):
     use_default = st.checkbox("Use default cleaned file (updatedSMC.xlsx)", value=False)
 
 if uploaded_file or use_default:
-    # Load file
+    # Load only first 100 rows
     if use_default:
-        df = pd.read_excel(default_file_path)
+        df = pd.read_excel(default_file_path, nrows=100)
     elif uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
+        df = pd.read_csv(uploaded_file, nrows=100)
     else:
-        df = pd.read_excel(uploaded_file)
+        df = pd.read_excel(uploaded_file, nrows=100)
 
-    # Automatically detect number columns
+    # Detect number columns
     number_cols = [col for col in df.columns if "Num" in col]
 
-    # --- If no Num1–Num5 columns exist, parse single column ---
+    # --- Parse messy number column if needed ---
     if not number_cols:
         if "Numbers In Order" in df.columns:
             num_col = "Numbers In Order"
@@ -52,41 +53,32 @@ if uploaded_file or use_default:
             st.error("No valid number columns found.")
             st.stop()
 
-        # Split numbers using regex for multiple separators
-        nums_df = df[num_col].astype(str).apply(
-            lambda x: re.split(r"\s*[-–—,:;]\s*|\s{2,}", x.strip())
-        )
+        # Safe parse function
+        def safe_parse_numbers(cell):
+            nums = re.split(r'\s*[-–—,:;]\s*|\s{2,}', str(cell).strip())
+            return [int(n) for n in nums if n.isdigit()]
 
-        # Convert list of numbers into DataFrame
+        nums_df = df[num_col].apply(safe_parse_numbers)
         nums_df = pd.DataFrame(nums_df.tolist())
 
-        # Clean spaces & filter only digits before converting to int
-        nums_df = nums_df.applymap(lambda val: int(val.strip()) if isinstance(val, str) and val.strip().isdigit() else None)
+        # Fill missing numbers with NaN if some rows have fewer numbers
+        max_cols = nums_df.shape[1]
+        nums_df = nums_df.apply(lambda row: [row[i] if i < len(row) else None for i in range(max_cols)], axis=1, result_type='expand')
 
-        # Drop any all-NaN rows (just in case)
-        nums_df = nums_df.dropna(how="all")
-
-        # Sort each row ascending
-        nums_df = nums_df.apply(lambda row: sorted([n for n in row if pd.notna(n)]), axis=1, result_type="expand")
-
-        # Rename columns
         nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
-
-        # Merge with original df
         df = pd.concat([df, nums_df], axis=1)
         number_cols = nums_df.columns.tolist()
 
-    # --- Preview Uploaded Data ---
-    st.subheader("Preview of Uploaded Data")
-    st.dataframe(df.head())
+    # --- Preview Data ---
+    st.subheader("Preview of First 100 Rows")
+    st.dataframe(df.head(100))
 
     # ---------------------------
-    # Statistical Analysis / Sum Range
+    # Sum Analysis
     # ---------------------------
     st.subheader("Sum Range Analysis & Statistical Summary")
     df["Sum"] = df[number_cols].sum(axis=1)
 
-    # Summary statistics
     summary_stats = {
         'Mean': df['Sum'].mean(),
         'Median': df['Sum'].median(),
@@ -102,7 +94,7 @@ if uploaded_file or use_default:
     }
     st.write(summary_stats)
 
-    # Histogram of sum values
+    # Histogram
     fig, ax = plt.subplots()
     df["Sum"].plot(kind="hist", bins=20, ax=ax, edgecolor="black")
     ax.set_title("Distribution of Draw Sums")
@@ -110,21 +102,18 @@ if uploaded_file or use_default:
     ax.set_ylabel("Frequency")
     st.pyplot(fig)
 
-    # Highlight most common range (IQR)
-    most_common_range = (df["Sum"].quantile(0.25), df["Sum"].quantile(0.75))
-    st.write(f"✅ Most common sum range (IQR): **{int(most_common_range[0])} – {int(most_common_range[1])}**")
+    # Highlight most common range
+    iqr_range = (df["Sum"].quantile(0.25), df["Sum"].quantile(0.75))
+    st.write(f"✅ Most common sum range (IQR): **{int(iqr_range[0])} – {int(iqr_range[1])}**")
 
     # ---------------------------
-    # Odd/Even breakdown per row
+    # Odd/Even per row
     # ---------------------------
     st.subheader("Odd/Even Breakdown per Row")
+    def row_odd_even(row):
+        odd = (row % 2 != 0).sum()
+        even = (row % 2 == 0).sum()
+        return f"{odd}/{even}"
 
-    def row_odd_even_count(row):
-        odd_count = (row % 2 != 0).sum()
-        even_count = (row % 2 == 0).sum()
-        return f"{odd_count}/{even_count}"
-
-    df["Odd/Even"] = df[number_cols].apply(row_odd_even_count, axis=1)
-
-    # Show numbers with Odd/Even last
+    df["Odd/Even"] = df[number_cols].apply(row_odd_even, axis=1)
     st.dataframe(df[number_cols + ["Odd/Even"]])

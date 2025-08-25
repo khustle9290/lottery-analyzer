@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import re
 
 st.title("🎲 Missouri Show Me Cash Lottery Analyzer")
 
@@ -12,9 +13,10 @@ st.sidebar.markdown("[💰 Donate via PayPal](https://paypal.me/vinwills)")
 st.markdown(
     """
 **⚠️ Important:**  
-Please make sure your uploaded file has column headings as follows:  
+Please make sure your uploaded file either has column headings as follows:  
 `Num1, Num2, Num3, Num4, Num5`  
-This ensures the app reads your lottery numbers correctly.
+OR contains a column called `Numbers In Order` or `Numbers As Drawn`.  
+The app will handle both formats automatically.
 """
 )
 
@@ -31,6 +33,33 @@ if uploaded_file:
     # Automatically detect number columns
     number_cols = [col for col in df.columns if "Num" in col]
 
+    # If no Num1–Num5 columns exist, parse single column
+    if not number_cols:
+        if "Numbers In Order" in df.columns:
+            num_col = "Numbers In Order"
+        elif "Numbers As Drawn" in df.columns:
+            num_col = "Numbers As Drawn"
+        else:
+            st.error("No valid number columns found.")
+            st.stop()
+
+        # Split numbers using regex for multiple separators
+        nums_df = df[num_col].astype(str).apply(
+            lambda x: re.split(r"\s*[-–—,:;]\s*|\s{2,}", x.strip())
+        )
+
+        # Convert to DataFrame and ints
+        nums_df = pd.DataFrame(nums_df.tolist())
+        nums_df = nums_df.apply(lambda col: col.str.strip().astype(int))
+
+        # Sort ascending
+        nums_df = nums_df.apply(lambda row: sorted(row), axis=1, result_type='expand')
+        nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
+
+        # Merge with original df
+        df = pd.concat([df, nums_df], axis=1)
+        number_cols = nums_df.columns.tolist()
+
     st.subheader("Preview of Uploaded Data")
     st.dataframe(df.head())
 
@@ -38,7 +67,6 @@ if uploaded_file:
     # Statistical Analysis / Sum Range
     # ---------------------------
     st.subheader("Sum Range Analysis & Statistical Summary")
-
     df["Sum"] = df[number_cols].sum(axis=1)
 
     # Summary statistics
@@ -55,7 +83,6 @@ if uploaded_file:
         'Q2 (Median)': df['Sum'].median(),
         'Q3': df['Sum'].quantile(0.75)
     }
-
     st.write(summary_stats)
 
     # Histogram of sum values

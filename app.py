@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import re
+import os
 
 st.title("🎲 Missouri Show Me Cash Lottery Analyzer")
 
@@ -23,9 +24,17 @@ The app will handle both formats automatically.
 # --- File Upload ---
 uploaded_file = st.file_uploader("Upload your lottery results (Excel/CSV)", type=["csv", "xlsx"])
 
-if uploaded_file:
+# --- Optional: Automatically use cleaned default file ---
+default_file_path = r"C:\Users\vin\Downloads\SMC\updatedSMC.xlsx"
+use_default = False
+if os.path.exists(default_file_path):
+    use_default = st.checkbox("Use default cleaned file (updatedSMC.xlsx)", value=False)
+
+if uploaded_file or use_default:
     # Load file
-    if uploaded_file.name.endswith(".csv"):
+    if use_default:
+        df = pd.read_excel(default_file_path)
+    elif uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_excel(uploaded_file)

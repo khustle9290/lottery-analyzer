@@ -23,7 +23,7 @@ st.markdown(
 - Columns must be labeled **Num1, Num2, Num3, Num4, Num5**.  
 - Each row represents a single Pick 5 draw.  
 - Optionally, include a **Draw Date** column in the first column.  
-- The app will automatically parse the numbers, calculate the **sum**, show **odd/even breakdown**, and count **triangular numbers**.
+- The app will automatically parse the numbers, calculate the **sum**, show **odd/even breakdown**, count **triangular numbers**, and summarize odd/even patterns.
 """
 )
 
@@ -72,9 +72,6 @@ if uploaded_file is not None:
         df_final["Sum"] = df_numbers.sum(axis=1, skipna=True)
 
         # --- Odd/Even and Triangular Number Analysis ---
-        def odd_even_status(number):
-            return "even" if number % 2 == 0 else "odd"
-
         def is_triangular_number(number):
             if number < 1:
                 return False
@@ -100,7 +97,7 @@ if uploaded_file is not None:
         df_final["Odd/Even"] = odd_even_list
         df_final["Tri Count"] = tri_count_list
 
-        # --- Display cleaned data with odd/even and triangular info ---
+        # --- Display cleaned data ---
         st.subheader("Cleaned Pick 5 Data with Odd/Even & Triangular Number Counts")
         st.dataframe(df_final)
 
@@ -138,6 +135,21 @@ if uploaded_file is not None:
             f"✅ **Most common sum range (IQR)**: {int(iqr[0])} – {int(iqr[1])}  \n"
             "This means that 50% of all draw sums fall within this range, representing the most typical totals from the draws."
         )
+
+        # --- Odd/Even Pattern Summary ---
+        st.subheader("Odd/Even Pattern Summary")
+        pattern_counts = df_final["Odd/Even"].value_counts().sort_index()
+        total_combinations = pattern_counts.sum()
+
+        summary_table = pd.DataFrame({
+            "Count": pattern_counts,
+            "Percentage (%)": (pattern_counts / total_combinations * 100).round(2)
+        })
+        summary_table = summary_table.rename_axis("Odd/Even Pattern").reset_index()
+
+        st.table(summary_table)
+        st.markdown(f"**Total combinations:** {total_combinations}")
+        st.markdown(f"**Sum of all listed categories:** {pattern_counts.sum()}")
 
     except Exception as e:
         st.error(f"Error reading file: {e}")

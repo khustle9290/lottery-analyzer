@@ -1,113 +1,73 @@
-import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
+import pandas as pd
 import re
-import os
 
-st.title("🎲 Missouri Show Me Cash Lottery Analyzer")
-
-# --- Sidebar Donation ---
-st.sidebar.header("Support this App")
-st.sidebar.markdown("[💰 Donate via PayPal](https://paypal.me/vinwills)")
-
-# --- Instructions ---
-st.markdown(
-    """
-**⚠️ Important:**  
-The app supports both formats:  
-1. Columns `Num1, Num2, ..., Num5`  
-2. Column `Numbers In Order` (parsed automatically)  
-Only the **first 100 rows** will be analyzed.  
-Multiple separators like `-`, `–`, `—`, `,`, `:`, `;` are handled automatically.
-"""
+# --- Page config with custom icon ---
+st.set_page_config(
+    page_title="Pick 5 Patterns & Trends",
+    page_icon=r"C:\Users\vin\Downloads\lottery-analyzer\balls.png",
+    layout="centered"
 )
 
-# --- File Upload or default ---
-uploaded_file = st.file_uploader("Upload your lottery results (Excel/CSV)", type=["csv", "xlsx"])
+# --- Title & subtitle ---
+st.title("Pick 5 Patterns & Trends")
+st.write("Analyze number patterns across different Pick 5 ranges (1–32, 1–36, 1–39).")
 
-default_file_path = r"C:\Users\vin\Downloads\ShowMeCash.xlsx"
-use_default = False
-if os.path.exists(default_file_path):
-    use_default = st.checkbox("Use default file (ShowMeCash.xlsx)", value=False)
+# --- File uploader ---
+uploaded_file = st.file_uploader("Upload your Pick 5 Excel file", type=["xlsx"])
 
-if uploaded_file or use_default:
-    # Load only first 100 rows
-    if use_default:
-        df = pd.read_excel(default_file_path, nrows=100)
-    elif uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file, nrows=100)
-    else:
-        df = pd.read_excel(uploaded_file, nrows=100)
+if uploaded_file is not None:
+    try:
+        df = pd.read_excel(uploaded_file)
 
-    # --- Detect number columns (Num1–Num5) ---
-    number_cols = [col for col in df.columns if re.match(r"Num\d+", col)]
+        # --- Detect usable column (prefer "Numbers In Order") ---
+        usable_col = None
+        for col in df.columns:
+            if "Numbers In Order" in col:
+                usable_col = col
+                break
+        # Fallback to 4th column if "Numbers In Order" not found
+        if usable_col is None and len(df.columns) > 3:
+            usable_col = df.columns[3]
 
-    if number_cols:
-        # Already in Num1–Num5 format
-        nums_df = df[number_cols].apply(pd.to_numeric, errors='coerce')
-    elif "Numbers In Order" in df.columns:
-        # Parse Numbers In Order safely
-        nums_df = df["Numbers In Order"].astype(str).str.split(r'\s*[-–—,:;]\s*', expand=True)
-        nums_df = nums_df.applymap(lambda x: pd.to_numeric(str(x).strip(), errors='coerce'))
-    else:
-        st.error("No valid number columns found (Num1–Num5 or Numbers In Order).")
-        st.stop()
+        if usable_col is None:
+            st.error("Could not find 'Numbers In Order' column or a valid fallback column.")
+        else:
+            # --- Parse numbers robustly ---
+            df[usable_col] = df[usable_col].astype(str).apply(
+                lambda x: re.split(r"\s*[-–—,:;]\s*|\s+", x.strip())
+            )
 
-    # Rename columns dynamically
-    nums_df.columns = [f"Num{i+1}" for i in range(nums_df.shape[1])]
-    number_cols = nums_df.columns.tolist()
+            # Expand into separate columns
+            df_numbers = pd.DataFrame(df[usable_col].tolist())
+            df_numbers = df_numbers.apply(pd.to_numeric, errors="coerce")
 
-    # Merge Draw Date if exists
-    if "Draw Date" in df.columns:
-        df = pd.concat([df["Draw Date"], nums_df], axis=1)
-    else:
-        df = nums_df
+            # Rename columns Num1..Num5
+            df_numbers = df_numbers.iloc[:, :5]  # keep only first 5 numbers
+            df_numbers = df_numbers.reindex(columns=range(5))  # pad if fewer than 5
+            df_numbers.columns = [f"Num{i}" for i in range(1, 6)]
 
-    # --- Preview Data ---
-    st.subheader("Preview of First 100 Rows")
-    st.dataframe(df.head(100))
+            # Combine with Draw Date if available
+            if "Draw Date" in df.columns:
+                df_final = pd.concat([df["Draw Date"], df_numbers], axis=1)
+            else:
+                df_final = df_numbers
 
-    # ---------------------------
-    # Sum Analysis
-    # ---------------------------
-    st.subheader("Sum Range Analysis & Statistical Summary")
-    df["Sum"] = df[number_cols].sum(axis=1, skipna=True)
+            # --- Compute Sum ---
+            df_final["Sum"] = df_numbers.sum(axis=1, skipna=True)
 
-    summary_stats = {
-        'Mean': df['Sum'].mean(),
-        'Median': df['Sum'].median(),
-        'Mode': df['Sum'].mode()[0] if not df['Sum'].mode().empty else None,
-        'Min': df['Sum'].min(),
-        'Max': df['Sum'].max(),
-        'Range': df['Sum'].max() - df['Sum'].min(),
-        'Variance': df['Sum'].var(),
-        'Standard Deviation': df['Sum'].std(),
-        'Q1': df['Sum'].quantile(0.25),
-        'Q2 (Median)': df['Sum'].median(),
-        'Q3': df['Sum'].quantile(0.75)
-    }
-    st.write(summary_stats)
+            # --- Compute Odd/Even ---
+            def row_odd_even(row):
+                vals = row.dropna()
+                odd = (vals % 2 != 0).sum()
+                even = (vals % 2 == 0).sum()
+                return f"{odd}/{even}"
 
-    # Histogram
-    fig, ax = plt.subplots()
-    df["Sum"].plot(kind="hist", bins=20, ax=ax, edgecolor="black")
-    ax.set_title("Distribution of Draw Sums")
-    ax.set_xlabel("Sum Value")
-    ax.set_ylabel("Frequency")
-    st.pyplot(fig)
+            df_final["Odd/Even"] = df_numbers.apply(row_odd_even, axis=1)
 
-    # Highlight most common range (IQR)
-    iqr_range = (df["Sum"].quantile(0.25), df["Sum"].quantile(0.75))
-    st.write(f"✅ Most common sum range (IQR): **{int(iqr_range[0])} – {int(iqr_range[1])}**")
+            # --- Display cleaned data ---
+            st.subheader("Cleaned Pick 5 Data")
+            st.dataframe(df_final)
 
-    # ---------------------------
-    # Odd/Even per row
-    # ---------------------------
-    st.subheader("Odd/Even Breakdown per Row")
-    def row_odd_even(row):
-        odd = (row % 2 != 0).sum()
-        even = (row % 2 == 0).sum()
-        return f"{odd}/{even}"
-
-    df["Odd/Even"] = df[number_cols].apply(row_odd_even, axis=1)
-    st.dataframe(df[number_cols + ["Odd/Even"]])
+    except Exception as e:
+        st.error(f"Error reading file: {e}")

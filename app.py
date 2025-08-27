@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import matplotlib.pyplot as plt
+import math
 
 # --- Page config with custom icon ---
 st.set_page_config(
@@ -22,7 +23,7 @@ st.markdown(
 - Columns must be labeled **Num1, Num2, Num3, Num4, Num5**.  
 - Each row represents a single Pick 5 draw.  
 - Optionally, include a **Draw Date** column in the first column.  
-- The app will automatically parse the numbers, calculate the **sum** of each row, and show the **odd/even breakdown**.  
+- The app will automatically parse the numbers, calculate the **sum**, show **odd/even breakdown**, and count **triangular numbers**.
 """
 )
 
@@ -50,32 +51,13 @@ if uploaded_file is not None:
         else:
             df = pd.read_excel(uploaded_file)
 
-        # --- Detect usable column (prefer Num1..Num5 format) ---
+        # --- Detect usable column (Num1..Num5) ---
         number_cols = [col for col in df.columns if re.match(r"(?i)^num\d+$", col)]
         if number_cols:
             df_numbers = df[number_cols].apply(pd.to_numeric, errors="coerce")
         else:
-            # Fallback to parsing "Numbers In Order" (index 3)
-            usable_col = None
-            for col in df.columns:
-                if "Numbers In Order" in col:
-                    usable_col = col
-                    break
-            if usable_col is None and len(df.columns) > 3:
-                usable_col = df.columns[3]
-
-            if usable_col is None:
-                st.error("No valid number columns found. Please ensure your file has Num1–Num5 or 'Numbers In Order'.")
-                st.stop()
-
-            # Parse Numbers In Order
-            df[usable_col] = df[usable_col].astype(str).apply(
-                lambda x: re.split(r"\s*[-–—,:;]\s*|\s+", x.strip())
-            )
-            df_numbers = pd.DataFrame(df[usable_col].tolist())
-            df_numbers = df_numbers.apply(pd.to_numeric, errors="coerce")
-            df_numbers = df_numbers.iloc[:, :5]  # keep only first 5 numbers
-            df_numbers = df_numbers.reindex(columns=range(5))  # pad if fewer than 5
+            st.error("No valid number columns found. Please ensure your file has Num1–Num5.")
+            st.stop()
 
         # Rename columns Num1..Num5
         df_numbers.columns = [f"Num{i}" for i in range(1, 6)]
@@ -89,17 +71,37 @@ if uploaded_file is not None:
         # --- Compute Sum ---
         df_final["Sum"] = df_numbers.sum(axis=1, skipna=True)
 
-        # --- Compute Odd/Even ---
-        def row_odd_even(row):
-            vals = row.dropna()
-            odd = (vals % 2 != 0).sum()
-            even = (vals % 2 == 0).sum()
-            return f"{odd}/{even}"
+        # --- Odd/Even and Triangular Number Analysis ---
+        def odd_even_status(number):
+            return "even" if number % 2 == 0 else "odd"
 
-        df_final["Odd/Even"] = df_numbers.apply(row_odd_even, axis=1)
+        def is_triangular_number(number):
+            if number < 1:
+                return False
+            n = (math.sqrt(8 * number + 1) - 1) / 2
+            return n.is_integer()
 
-        # --- Display cleaned data ---
-        st.subheader("Cleaned Pick 5 Data")
+        odd_even_list = []
+        tri_count_list = []
+
+        for _, row in df_numbers.iterrows():
+            odd = even = tri_count = 0
+            for num in row:
+                if pd.notna(num):
+                    if num % 2 == 0:
+                        even += 1
+                    else:
+                        odd += 1
+                    if is_triangular_number(num):
+                        tri_count += 1
+            odd_even_list.append(f"{odd} odd / {even} even")
+            tri_count_list.append(tri_count)
+
+        df_final["Odd/Even"] = odd_even_list
+        df_final["Tri Count"] = tri_count_list
+
+        # --- Display cleaned data with odd/even and triangular info ---
+        st.subheader("Cleaned Pick 5 Data with Odd/Even & Triangular Number Counts")
         st.dataframe(df_final)
 
         # --- Statistical Summary ---
@@ -119,7 +121,6 @@ if uploaded_file is not None:
             "Q2 (Median)": sum_series.median(),
             "Q3 (75th Percentile)": sum_series.quantile(0.75),
         }
-
         st.write(summary_stats)
 
         # --- Histogram of sums ---

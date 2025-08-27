@@ -4,7 +4,7 @@ import numpy as np
 import itertools
 import random
 import math
-from io import BytesIO
+from io import StringIO
 
 # --- Page config ---
 st.set_page_config(
@@ -78,11 +78,13 @@ def generate_potential_datasets(n, past_combos, mean, std_dev):
 # --- Main logic ---
 if uploaded_file is not None:
     try:
+        # Load file
         if uploaded_file.name.lower().endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
 
+        # Ensure 5 number columns
         number_cols = [col for col in df.columns if col.lower().startswith("num")]
         if len(number_cols) != 5:
             st.error("File must have exactly 5 columns: Num1–Num5.")
@@ -95,9 +97,9 @@ if uploaded_file is not None:
         sums = [sum(c) for c in past_combos]
         mean = np.mean(sums)
         std_dev = np.std(sums)
-
         st.write(f"Historical mean sum: {mean:.2f}, Std Dev: {std_dev:.2f}")
 
+        # Generate datasets on button click
         if st.button("Generate Datasets"):
             generated = generate_potential_datasets(1000, past_combos, mean, std_dev)
             output = []
@@ -118,15 +120,13 @@ if uploaded_file is not None:
             st.subheader("Top Generated Datasets")
             st.dataframe(output_df)
 
-            # --- Download option ---
-            towrite = BytesIO()
-            output_df.to_excel(towrite, index=False, engine='xlsxwriter')
-            towrite.seek(0)
+            # --- Optional CSV download ---
+            csv = output_df.to_csv(index=False)
             st.download_button(
-                label="Download Generated Datasets as Excel",
-                data=towrite,
-                file_name="generated_pick5_datasets.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                label="Download Generated Datasets as CSV",
+                data=csv,
+                file_name="generated_pick5.csv",
+                mime="text/csv"
             )
 
     except Exception as e:

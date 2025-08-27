@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import matplotlib.pyplot as plt
 
 # --- Page config with custom icon ---
 st.set_page_config(
@@ -100,6 +101,42 @@ if uploaded_file is not None:
         # --- Display cleaned data ---
         st.subheader("Cleaned Pick 5 Data")
         st.dataframe(df_final)
+
+        # --- Statistical Summary ---
+        st.subheader("Statistical Summary of Draw Sums")
+        sum_series = df_final["Sum"]
+
+        summary_stats = {
+            "Mean (Average Sum)": sum_series.mean(),
+            "Median (Middle Sum)": sum_series.median(),
+            "Mode (Most Common Sum)": sum_series.mode()[0] if not sum_series.mode().empty else None,
+            "Minimum Sum": sum_series.min(),
+            "Maximum Sum": sum_series.max(),
+            "Range (Max - Min)": sum_series.max() - sum_series.min(),
+            "Variance": sum_series.var(),
+            "Standard Deviation": sum_series.std(),
+            "Q1 (25th Percentile)": sum_series.quantile(0.25),
+            "Q2 (Median)": sum_series.median(),
+            "Q3 (75th Percentile)": sum_series.quantile(0.75),
+        }
+
+        st.write(summary_stats)
+
+        # --- Histogram of sums ---
+        st.subheader("Distribution of Draw Sums")
+        fig, ax = plt.subplots()
+        sum_series.plot(kind="hist", bins=20, edgecolor="black", ax=ax)
+        ax.set_title("Histogram of Draw Sums")
+        ax.set_xlabel("Sum of 5 Numbers")
+        ax.set_ylabel("Frequency")
+        st.pyplot(fig)
+
+        # --- IQR explanation ---
+        iqr = (sum_series.quantile(0.25), sum_series.quantile(0.75))
+        st.markdown(
+            f"✅ **Most common sum range (IQR)**: {int(iqr[0])} – {int(iqr[1])}  \n"
+            "This means that 50% of all draw sums fall within this range, representing the most typical totals from the draws."
+        )
 
     except Exception as e:
         st.error(f"Error reading file: {e}")

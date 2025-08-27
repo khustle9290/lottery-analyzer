@@ -24,6 +24,20 @@ st.markdown("""
 - Click **Generate Datasets** to see potential new combinations.
 """)
 
+st.subheader("📄 Example of Uploaded File Format")
+st.markdown(
+    """
+The uploaded file should be either an Excel or CSV file with **columns labeled `Num1` to `Num5`**, and optionally `Draw Date`.  
+
+| Draw Date | Num1 | Num2 | Num3 | Num4 | Num5 |
+|-----------|------|------|------|------|------|
+| 25-Aug-25 | 19   | 24   | 27   | 33   | 35   |
+| 24-Aug-25 | 4    | 6    | 10   | 13   | 29   |
+| 23-Aug-25 | 8    | 11   | 29   | 32   | 38   |
+"""
+)
+
+
 # --- File uploader ---
 uploaded_file = st.file_uploader("Upload your historical Pick 5 data", type=["xlsx", "csv"])
 

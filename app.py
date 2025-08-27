@@ -1,155 +1,133 @@
 import streamlit as st
 import pandas as pd
-import re
-import matplotlib.pyplot as plt
+import numpy as np
+import itertools
+import random
 import math
+from io import BytesIO
 
-# --- Page config with custom icon ---
+# --- Page config ---
 st.set_page_config(
-    page_title="Pick 5 Patterns & Trends",
+    page_title="Pick 5 Dataset Generator",
     page_icon=r"C:\Users\vin\Downloads\lottery-analyzer\balls.png",
     layout="centered"
 )
 
-# --- Title & subtitle ---
-st.title("Pick 5 Patterns & Trends")
-st.write("Analyze number patterns across different Pick 5 ranges (1–32, 1–36, 1–39).")
+st.title("Pick 5 Dataset Generator")
+st.write("Generate potential Pick 5 datasets based on historical patterns and constraints.")
 
 # --- Instructions ---
-st.markdown(
-    """
-**📄 Instructions for File Upload:**  
-- Your file should be in **Excel (.xlsx)** or **CSV (.csv)** format.  
-- Columns must be labeled **Num1, Num2, Num3, Num4, Num5**.  
-- Each row represents a single Pick 5 draw.  
-- Optionally, include a **Draw Date** column in the first column.  
-- The app will automatically parse the numbers, calculate the **sum**, show **odd/even breakdown**, count **triangular numbers**, and summarize odd/even patterns.
-"""
-)
-
-# --- Example table ---
-st.subheader("Example of the file format")
-example_data = {
-    "Draw Date": ["2025-08-24", "2025-08-23", "2025-08-22"],
-    "Num1": [4, 8, 8],
-    "Num2": [6, 11, 9],
-    "Num3": [10, 29, 13],
-    "Num4": [13, 32, 15],
-    "Num5": [29, 38, 29],
-}
-example_df = pd.DataFrame(example_data)
-st.table(example_df)
+st.markdown("""
+**Instructions:**  
+- Upload historical Pick 5 data (Excel/CSV) with columns: `Num1, Num2, Num3, Num4, Num5`.  
+- Optionally include a `Draw Date` column.  
+- Click **Generate Datasets** to see potential new combinations.
+""")
 
 # --- File uploader ---
-uploaded_file = st.file_uploader("Upload your Pick 5 Excel or CSV file", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Upload your historical Pick 5 data", type=["xlsx", "csv"])
 
+# --- Function definitions ---
+def is_triangular(n):
+    if n < 1:
+        return False
+    x = (-1 + math.sqrt(1 + 8 * n)) / 2
+    return x.is_integer()
+
+def odd_even_breakdown(dataset):
+    odds = sum(1 for x in dataset if x % 2 != 0)
+    evens = len(dataset) - odds
+    return f"{odds} odd, {evens} even"
+
+def calculate_gaps(dataset):
+    return [dataset[i+1] - dataset[i] for i in range(len(dataset)-1)]
+
+def sum_rule(dataset_sum, mean, std_dev):
+    return (mean - std_dev) <= dataset_sum <= (mean + std_dev)
+
+def avoid_last_digit_repetition(dataset):
+    last_digits = [num % 10 for num in dataset]
+    return len(set(last_digits)) == len(last_digits)
+
+def count_triangular(dataset):
+    return sum(1 for num in dataset if is_triangular(num))
+
+def generate_potential_datasets(n, past_combos, mean, std_dev):
+    potential_datasets = []
+    past_set = set(tuple(sorted(c)) for c in past_combos)
+    previous_row_numbers = set()
+    attempts = 0
+    max_attempts = 20000
+
+    while len(potential_datasets) < n and attempts < max_attempts:
+        dataset = sorted(random.sample(range(1, 40), 5))
+        dataset_sum = sum(dataset)
+
+        if (tuple(dataset) not in past_set and
+            sum_rule(dataset_sum, mean, std_dev) and
+            avoid_last_digit_repetition(dataset) and
+            previous_row_numbers.isdisjoint(dataset)):
+            
+            potential_datasets.append(dataset)
+            previous_row_numbers = set(dataset)
+
+        attempts += 1
+
+    return potential_datasets
+
+# --- Main logic ---
 if uploaded_file is not None:
     try:
-        # Determine file type and read
         if uploaded_file.name.lower().endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
 
-        # --- Detect usable column (Num1..Num5) ---
-        number_cols = [col for col in df.columns if re.match(r"(?i)^num\d+$", col)]
-        if number_cols:
-            df_numbers = df[number_cols].apply(pd.to_numeric, errors="coerce")
-        else:
-            st.error("No valid number columns found. Please ensure your file has Num1–Num5.")
+        number_cols = [col for col in df.columns if col.lower().startswith("num")]
+        if len(number_cols) != 5:
+            st.error("File must have exactly 5 columns: Num1–Num5.")
             st.stop()
 
-        # Rename columns Num1..Num5
-        df_numbers.columns = [f"Num{i}" for i in range(1, 6)]
+        df_numbers = df[number_cols].apply(pd.to_numeric, errors="coerce")
+        past_combos = [list(row) for row in df_numbers.values]
 
-        # Combine with Draw Date if available
-        if "Draw Date" in df.columns:
-            df_final = pd.concat([df["Draw Date"], df_numbers], axis=1)
-        else:
-            df_final = df_numbers
+        # Calculate mean and std deviation of sums
+        sums = [sum(c) for c in past_combos]
+        mean = np.mean(sums)
+        std_dev = np.std(sums)
 
-        # --- Compute Sum ---
-        df_final["Sum"] = df_numbers.sum(axis=1, skipna=True)
+        st.write(f"Historical mean sum: {mean:.2f}, Std Dev: {std_dev:.2f}")
 
-        # --- Odd/Even and Triangular Number Analysis ---
-        def is_triangular_number(number):
-            if number < 1:
-                return False
-            n = (math.sqrt(8 * number + 1) - 1) / 2
-            return n.is_integer()
+        if st.button("Generate Datasets"):
+            generated = generate_potential_datasets(1000, past_combos, mean, std_dev)
+            output = []
+            for dataset in generated[:50]:  # show top 50
+                output.append({
+                    "Num1": dataset[0],
+                    "Num2": dataset[1],
+                    "Num3": dataset[2],
+                    "Num4": dataset[3],
+                    "Num5": dataset[4],
+                    "Sum": sum(dataset),
+                    "Odd/Even": odd_even_breakdown(dataset),
+                    "Gaps": calculate_gaps(dataset),
+                    "Tri Count": count_triangular(dataset)
+                })
 
-        odd_even_list = []
-        tri_count_list = []
+            output_df = pd.DataFrame(output)
+            st.subheader("Top Generated Datasets")
+            st.dataframe(output_df)
 
-        for _, row in df_numbers.iterrows():
-            odd = even = tri_count = 0
-            for num in row:
-                if pd.notna(num):
-                    if num % 2 == 0:
-                        even += 1
-                    else:
-                        odd += 1
-                    if is_triangular_number(num):
-                        tri_count += 1
-            odd_even_list.append(f"{odd} odd / {even} even")
-            tri_count_list.append(tri_count)
-
-        df_final["Odd/Even"] = odd_even_list
-        df_final["Tri Count"] = tri_count_list
-
-        # --- Display cleaned data ---
-        st.subheader("Cleaned Pick 5 Data with Odd/Even & Triangular Number Counts")
-        st.dataframe(df_final)
-
-        # --- Statistical Summary ---
-        st.subheader("Statistical Summary of Draw Sums")
-        sum_series = df_final["Sum"]
-
-        summary_stats = {
-            "Mean (Average Sum)": sum_series.mean(),
-            "Median (Middle Sum)": sum_series.median(),
-            "Mode (Most Common Sum)": sum_series.mode()[0] if not sum_series.mode().empty else None,
-            "Minimum Sum": sum_series.min(),
-            "Maximum Sum": sum_series.max(),
-            "Range (Max - Min)": sum_series.max() - sum_series.min(),
-            "Variance": sum_series.var(),
-            "Standard Deviation": sum_series.std(),
-            "Q1 (25th Percentile)": sum_series.quantile(0.25),
-            "Q2 (Median)": sum_series.median(),
-            "Q3 (75th Percentile)": sum_series.quantile(0.75),
-        }
-        st.write(summary_stats)
-
-        # --- Histogram of sums ---
-        st.subheader("Distribution of Draw Sums")
-        fig, ax = plt.subplots()
-        sum_series.plot(kind="hist", bins=20, edgecolor="black", ax=ax)
-        ax.set_title("Histogram of Draw Sums")
-        ax.set_xlabel("Sum of 5 Numbers")
-        ax.set_ylabel("Frequency")
-        st.pyplot(fig)
-
-        # --- IQR explanation ---
-        iqr = (sum_series.quantile(0.25), sum_series.quantile(0.75))
-        st.markdown(
-            f"✅ **Most common sum range (IQR)**: {int(iqr[0])} – {int(iqr[1])}  \n"
-            "This means that 50% of all draw sums fall within this range, representing the most typical totals from the draws."
-        )
-
-        # --- Odd/Even Pattern Summary ---
-        st.subheader("Odd/Even Pattern Summary")
-        pattern_counts = df_final["Odd/Even"].value_counts().sort_index()
-        total_combinations = pattern_counts.sum()
-
-        summary_table = pd.DataFrame({
-            "Count": pattern_counts,
-            "Percentage (%)": (pattern_counts / total_combinations * 100).round(2)
-        })
-        summary_table = summary_table.rename_axis("Odd/Even Pattern").reset_index()
-
-        st.table(summary_table)
-        st.markdown(f"**Total combinations:** {total_combinations}")
-        st.markdown(f"**Sum of all listed categories:** {pattern_counts.sum()}")
+            # --- Download option ---
+            towrite = BytesIO()
+            output_df.to_excel(towrite, index=False, engine='xlsxwriter')
+            towrite.seek(0)
+            st.download_button(
+                label="Download Generated Datasets as Excel",
+                data=towrite,
+                file_name="generated_pick5_datasets.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"Error processing file: {e}")
